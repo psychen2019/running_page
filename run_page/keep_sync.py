@@ -24,12 +24,13 @@ from generator import Generator
 from utils import adjust_time
 import xml.etree.ElementTree as ET
 
-KEEP_SPORT_TYPES = ["running", "hiking", "cycling"]
+KEEP_SPORT_TYPES = ["running", "hiking", "cycling", "training"]
 KEEP2STRAVA = {
     "outdoorWalking": "Walk",
     "outdoorRunning": "Run",
     "outdoorCycling": "Ride",
     "indoorRunning": "VirtualRun",
+    "indoorCycling": "VirtualRide",
     "mountaineering": "Hiking",
 }
 KEEP2TCX = {
@@ -37,6 +38,7 @@ KEEP2TCX = {
     "outdoorRunning": "Running",
     "outdoorCycling": "Biking",
     "indoorRunning": "Running",
+    "indoorCycling": "Biking",
     "mountaineering": "Hiking",
 }
 
@@ -132,7 +134,7 @@ def parse_raw_data_to_nametuple(
         if avg_heart_rate and avg_heart_rate < 0:
             avg_heart_rate = None
 
-    if run_data["geoPoints"]:
+    if run_data.get("geoPoints"):
         run_points_data = decode_runmap_data(run_data["geoPoints"], True)
         run_points_data_gpx = run_points_data
         if TRANS_GCJ02_TO_WGS84:
@@ -173,6 +175,8 @@ def parse_raw_data_to_nametuple(
                 if str(keep_id) not in old_tcx_ids:
                     download_keep_tcx(tcx_data.toprettyxml(), str(keep_id))
     else:
+        run_points_data = []
+        run_points_data_gpx = []
         print(f"ID {keep_id} no gps data")
     polyline_str = polyline.encode(run_points_data) if run_points_data else ""
     start_latlng = start_point(*run_points_data[0]) if run_points_data else None
@@ -184,26 +188,29 @@ def parse_raw_data_to_nametuple(
     if not run_data["duration"]:
         print(f"ID {keep_id} has no total time just ignore please check")
         return
+    distance = run_data.get("distance") or 0
+    duration = run_data["duration"] or 0
+    avg_speed = distance / duration if duration > 0 else 0
     d = {
         "id": int(keep_id),
-        "name": f"{KEEP2STRAVA[run_data['dataType']]} from keep",
+        "name": f"{KEEP2STRAVA.get(run_data['dataType'], 'Workout')} from keep",
         # future to support others workout now only for run
-        "type": f"{KEEP2STRAVA[(run_data['dataType'])]}",
-        "subtype": f"{KEEP2STRAVA[(run_data['dataType'])]}",
+        "type": f"{KEEP2STRAVA.get(run_data['dataType'], 'Workout')}",
+        "subtype": f"{KEEP2STRAVA.get(run_data['dataType'], 'Workout')}",
         "start_date": datetime.strftime(start_date, "%Y-%m-%d %H:%M:%S"),
         "end": datetime.strftime(end, "%Y-%m-%d %H:%M:%S"),
         "start_date_local": datetime.strftime(start_date_local, "%Y-%m-%d %H:%M:%S"),
         "end_local": datetime.strftime(end_local, "%Y-%m-%d %H:%M:%S"),
-        "length": run_data["distance"],
+        "length": distance,
         "average_heartrate": int(avg_heart_rate) if avg_heart_rate else None,
         "map": run_map(polyline_str),
         "start_latlng": start_latlng,
-        "distance": run_data["distance"],
-        "moving_time": timedelta(seconds=run_data["duration"]),
+        "distance": distance,
+        "moving_time": timedelta(seconds=duration),
         "elapsed_time": timedelta(
             seconds=int((run_data["endTime"] - run_data["startTime"]) // 1000)
         ),
-        "average_speed": run_data["distance"] / run_data["duration"],
+        "average_speed": avg_speed,
         "elevation_gain": elevation_gain,
         "location_country": str(run_data.get("region", "")),
     }
